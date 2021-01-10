@@ -106,13 +106,13 @@ const deleteBackups = async (response, projectId, instanceId, retentionCount, re
 
     response.log(`fetching all backups for project: ${projectId} and instance: ${instanceId}`);
 
-    // fetch upto 500 backups associated with the Cloud SQL
-    // assumption: There will not be more than 500 backups
-    // TODO: Implement pagination instead of hardcoding 500.
+    // fetch upto 100 backups associated with the Cloud SQL
+    // assumption: There will not be more than 100 backups
+    // TODO: Implement pagination instead of hardcoding 100.
     const res = await sqladmin.backupRuns.list({
         project: projectId,
         instance: instanceId,
-        maxResults: 500
+        maxResults: 100
     });
 
     let resp = {
