@@ -1,0 +1,14 @@
+.git
+.devcontainer
+creds.json
+*.tfvars
+**/.git
+**/.devcontainer
+**/node_modules
+**/npm-debug.log
+**/creds.json
+**/*.tfvars
+**/terraform.tfstate
+**/terraform.tfstate.backup
+**/.terraform
+**/.terraform.lock.hcl
