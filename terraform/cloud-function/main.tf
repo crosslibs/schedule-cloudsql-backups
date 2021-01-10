@@ -24,7 +24,7 @@ resource "google_storage_bucket_object" "archive" {
 }
 
 resource "google_cloudfunctions_function" "function" {
-    name        = "api"
+    name        = var.cloud_function_name
     description = "api to manage on-demand backups"
     runtime     = "nodejs12"
 

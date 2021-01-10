@@ -10,6 +10,10 @@ variable "project_id" {
     description = "GCP Project ID"
 }
 
+variable "cloud_function_name" {
+    description = "cloud function name"
+}
+
 variable "credentials_file_path" {
     description = "Path to the JSON file containing the account credentials"
 }

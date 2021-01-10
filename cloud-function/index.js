@@ -86,6 +86,14 @@ class Response {
     }
 }
 
+/**
+ * deletes old backups based on specified params - retention count and retention days
+ * @param response Response object 
+ * @param projectId gcp project id 
+ * @param instanceId cloud sql instance id 
+ * @param retentionCount no. of on-demand backups to retain (i.e. retentionCount number of latest backups will be retained)
+ * @param retentionDays no. of days to keep the on-demand backups (i.e. backups older than retentionDays will be purged) 
+ */
 const deleteBackups = async (response, projectId, instanceId, retentionCount, retentionDays) => {
     const auth = new google.auth.GoogleAuth({
         scopes: [
@@ -98,10 +106,13 @@ const deleteBackups = async (response, projectId, instanceId, retentionCount, re
 
     response.log(`fetching all backups for project: ${projectId} and instance: ${instanceId}`);
 
+    // fetch upto 500 backups associated with the Cloud SQL
+    // assumption: There will not be more than 500 backups
+    // TODO: Implement pagination instead of hardcoding 500.
     const res = await sqladmin.backupRuns.list({
         project: projectId,
         instance: instanceId,
-        maxResults: 100
+        maxResults: 500
     });
 
     let resp = {
@@ -123,6 +134,7 @@ const deleteBackups = async (response, projectId, instanceId, retentionCount, re
         return item.type === "ON_DEMAND"
     });
 
+    // if retention count is less than zero or not specified, retention count logic is not applied
     let toDeleteByCount = [];
     if (retentionCount >= 0
         && allBackups.length > retentionCount){
@@ -131,6 +143,7 @@ const deleteBackups = async (response, projectId, instanceId, retentionCount, re
         }
     }
 
+    // if retention days is less than zero or not specified, then retention days logic is not applied
     let toDeleteByDays = [];
     if (retentionDays >= 0) {
         let oldestDate = new Date();
@@ -140,6 +153,7 @@ const deleteBackups = async (response, projectId, instanceId, retentionCount, re
         }).map(backup => { return backup.id; });
     }
 
+    // list of backups to be deleted
     let toBeDeleted = [...new Set([...toDeleteByCount, ...toDeleteByDays])];
     toBeDeleted.forEach(async (id) => {
         response.log(`deleting backup with id: ${id}`);
@@ -156,12 +170,23 @@ const deleteBackups = async (response, projectId, instanceId, retentionCount, re
         }
     });
 
+    // total number of backups deleted
     resp['deleted']['total'] = toBeDeleted.length;
+    // list of purged backups
     resp['deleted']['backups'] = toBeDeleted;
 
     return resp;
 }
 
+/**
+ * retrieve the status of the backup (id) specified
+ * if backup id is specified as latest, the backup id of the latest backup is determined and 
+ * its status is returned
+ * @param response Response object 
+ * @param projectId gcp project id 
+ * @param instanceId cloud sql instance id 
+ * @param backupId cloud sql backup id
+ */
 const getBackupStatus = async (response, projectId, instanceId, backupId) => {
 
     const auth = new google.auth.GoogleAuth({
@@ -173,7 +198,7 @@ const getBackupStatus = async (response, projectId, instanceId, backupId) => {
     const authClient = await auth.getClient();
     google.options({ auth: authClient });
 
-    // If status of the latest run is specified, fetch the most recent run id
+    // if status of the latest run is specified, fetch the most recent run id
     let backupRunId = backupId;
     if(backupId.toLowerCase() === 'latest'){
         response.log(`fetching the backup id of the latest backup for project: ${projectId} and instance: ${instanceId}`);
@@ -188,11 +213,13 @@ const getBackupStatus = async (response, projectId, instanceId, backupId) => {
                 status: 'no backups exist'
             };
         }
+        // latest backup id
         backupRunId = res.data.items[0].id;
     }
 
     response.log(`fetching status for project: ${projectId} and instance: ${instanceId} and backup id: ${backupRunId}`);
 
+    // return the status of the backup run with the id
     return await sqladmin.backupRuns.get({
         id: backupRunId,
         project: projectId,
@@ -220,6 +247,7 @@ const startNewOnDemandBackup = async (response, projectId, instanceId) => {
 
     response.log(`starting a new on-demand backup for project: ${projectId} and instance: ${instanceId}`);
 
+    // create an on demand backup
     return await sqladmin.backupRuns.insert({
         project: projectId,
         instance: instanceId
@@ -228,6 +256,8 @@ const startNewOnDemandBackup = async (response, projectId, instanceId) => {
 
 const app = express();
 
+// GET method - retrieves the status of the backup id specified. 
+// in addition,'latest' is also accepted as a valid parameter for :backupId
 app.get('/projects/:projectId/instances/:instanceId/backups/:backupId', 
     (req, res) => {
         let response = new Response(res);
@@ -251,6 +281,7 @@ app.get('/projects/:projectId/instances/:instanceId/backups/:backupId',
         });
     });
 
+// POST method - create a new on-demand backup    
 app.post('/projects/:projectId/instances/:instanceId/backups', 
     (req, res) => {
         let response = new Response(res);
@@ -267,6 +298,11 @@ app.post('/projects/:projectId/instances/:instanceId/backups',
             });
     });
 
+// DELETE method - discards old backups based on two query parameters: retain_count and retain_days
+// retain_count specifies the number of latest backups to retain
+// retain_days specifies the number of days to retain the backups
+// Not specifying either of the query params or setting negative values would mean they are not utilized
+// for determining the backups to be purged.
 app.delete('/projects/:projectId/instances/:instanceId/backups', 
     (req, res) => {
         let response = new Response(res);
@@ -303,6 +339,7 @@ app.delete('/projects/:projectId/instances/:instanceId/backups',
             });
     });
 
+// catch all method, for all other routes
 app.all('*',
     (req, res) => {
         let response = new Response(res);
@@ -319,5 +356,7 @@ app.all('*',
              );
         }
     });
+
+// export app -- to be used by the cloud function
 module.exports = { app };
 
